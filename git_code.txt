@@ -1,0 +1,23 @@
+
+# create a new repository on the command line
+touch README.md
+git init
+git add README.md
+git commit -m "first commit"
+git remote add origin https://github.com/loongfee/test.git
+git push -u origin master
+
+# push an existing repository from the command line
+git remote add origin git@github.com:loongfee/test.git
+git push -u origin master
+
+
+# full from remote branch, overwrite
+git fetch --all
+git reset --hard origin/master
+git pull origin master
+
+# update, commit and push to remote
+git add --all
+git commit -m "comments for modification"
+git push origin master

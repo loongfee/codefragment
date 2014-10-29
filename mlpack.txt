@@ -1,0 +1,1 @@
+﻿编译64位mlpack时armadillo出错，在工程中预处理定义中添加ARMA_64BIT_WORD即可

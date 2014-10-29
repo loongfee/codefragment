@@ -1,0 +1,37 @@
+#coding=utf-8 
+#! python
+#-*- coding:utf-8 -*-
+import os
+import ntpath
+
+# if a dir does not exist, create it
+def makedir(folder):
+  if not os.path.exists(folder):
+    os.makedirs(folder)
+
+# get the base name of a file
+# e.g. "/p1/p2/p3/file.ext" output "file.ext" 
+def path_leaf(path):
+    head, tail = ntpath.split(path)
+    return tail or ntpath.basename(head)
+
+# get all the ".txt" files in a folder (recursively)
+def get_files_recursively(path, ext='.txt'):
+  fileList = []
+  for root, dirs, files in os.walk(path):
+      for file in files:
+          if file.endswith(ext):
+            fileList.append(os.path.join(root, file))
+  return fileList
+
+# get all the ".txt" files in a folder
+def get_files(path, ext='.txt'):
+  fileList = []
+  for file in os.listdir(path):
+    if file.endswith(ext):
+      fileList.append(file)
+  return fileList
+
+# os.remove() #will remove a file.
+#os.rmdir() # will remove an empty directory.
+#shutil.rmtree() #will delete a directory and all its contents.

@@ -1,0 +1,793 @@
+﻿1. Visual Studio 2010使用DirectShow
+#include "streams.h"
+#include "DShow.h"
+#pragma include_alias( "dxtrans.h", "qedit.h" )
+#define __IDxtCompositor_INTERFACE_DEFINED__
+#define __IDxtAlphaSetter_INTERFACE_DEFINED__
+#define __IDxtJpeg_INTERFACE_DEFINED__
+#define __IDxtKey_INTERFACE_DEFINED__
+#include "qedit.h"
+
+2. 安全释放指针
+释放New出来的单个对象
+template< typename T_Delete >
+void SafeDelete( T_Delete **pp )
+{
+    if (nullptr!=pp && nullptr!=*pp) {
+        delete (*pp);
+        *pp = nullptr
+    }
+}
+释放New出来的数组
+template< typename T_Delete >
+void SafeDeleteArray( T_Delete **pp)
+{
+    if (nullptr!=pp && nullptr!=*pp) {
+        delete [](*pp);
+        *pp = nullptr
+    }
+}
+释放COM指针，返回值为引用计数
+template< typename T_Release >
+ULONG SafeRelease( T_Release **pp )
+{
+    ULONG ret = 0;
+    if (nullptr!=pp && nullptr!=*pp) {
+        ret = (*pp)->Release();
+        *pp = nullptr;
+    }
+    return ret;
+}
+
+3. 利用循环获取CPU时钟的方法延迟指定时间，单位为毫秒
+void CSplitScreenServerDlg::cmDelay(int ms)
+{
+    LARGE_INTEGER litmp;
+    LONGLONG QPart1,QPart2;
+    double dfMinus, dfFreq, dfTim; 
+    QueryPerformanceFrequency(&litmp);
+    dfFreq = (double)litmp.QuadPart;// 获得计数器的时钟频率
+    QueryPerformanceCounter(&litmp);
+    QPart1 = litmp.QuadPart;// 获得初始值
+    do
+    {
+        QueryPerformanceCounter(&litmp);
+        QPart2 = litmp.QuadPart;//获得中止值
+        dfMinus = (double)(QPart2-QPart1);
+        dfTim = dfMinus/dfFreq;// 获得对应的时间值，单位为秒
+    }while(dfTim<0.001*ms);   //精确到1ms
+}
+
+4. IMediaDet抓取视频帧
+    HRESULT hr;
+
+    CoCreateInstance(CLSID_MediaDet, NULL, CLSCTX_INPROC_SERVER, IID_IMediaDet, (void **)&m_pDet);
+    m_pDet->put_Filename(wszFileName);
+
+    long lStreamNums = 0;
+    m_pDet->get_OutputStreams(&lStreamNums);
+
+    GUID majorType;
+    BOOL bIsFoundVideo = FALSE;
+    for (long i=0;i<lStreamNums;i++)
+    {
+        m_pDet->get_CurrentStream(&i);
+        m_pDet->get_StreamType(&majorType);
+        if (MEDIATYPE_Video == majorType)
+        {
+            bIsFoundVideo = TRUE;
+            break;
+        }
+    }
+    if(FALSE == bIsFoundVideo)
+    {
+        MessageBox(TEXT("未找到Video类型"));
+        return;
+    }
+
+    AM_MEDIA_TYPE mt;
+    hr = m_pDet->get_StreamMediaType(&mt);
+//     AM_MEDIA_TYPE *pmt = (AM_MEDIA_TYPE*)CoTaskMemAlloc(sizeof(AM_MEDIA_TYPE));
+//     hr = m_pDet->get_StreamMediaType(pmt);
+    if (SUCCEEDED(hr))
+    {
+        if ((mt.formattype == FORMAT_VideoInfo) && 
+            (mt.cbFormat >= sizeof(VIDEOINFOHEADER)))
+        {
+            VIDEOINFOHEADER *pVih = (VIDEOINFOHEADER*)(mt.pbFormat);
+            m_nFrameWidth = pVih->bmiHeader.biWidth;
+            m_nFrameHeight = pVih->bmiHeader.biHeight;
+        }
+        else
+            hr = VFW_E_INVALIDMEDIATYPE;
+/*        FreeMediaType(mt);*/
+//        cmDeleteMediaType(&mt); 
+    }
+    if (FAILED(hr))
+    {
+    
+        return;
+    }
+
+    double dStreamLength = 0;        
+    double dVal = 0;                            
+    m_pDet->get_StreamLength(&dStreamLength);
+    m_pDet->get_FrameRate(&dVal);
+    m_nFrameNums = (int)(dStreamLength*dVal);
+
+5. MFC使用多线程
+AfxBeginThread(cmVideoThread, (void *)this, THREAD_PRIORITY_NORMAL, 0, 0, NULL);
+UINT __cdecl cmVideoThread(PVOID pParam)
+{
+    CPlayAVIDlg *pThis = (CPlayAVIDlg *)pParam;
+    UINT nExitCode = pThis->cmVideoThreadProcess();
+    return nExitCode;
+}
+
+6. 显示BMP位图数据
+        SetDIBitsToDevice(m_hDC, 0, 0, 
+            nWidth, nHeight,
+            0,0,0, nHeight,
+            tempBMPBuffer,pInfo,
+            DIB_RGB_COLORS);
+
+7. 禁止用户拖动鼠标修改对话框大小
+LRESULT CPlayAVIDlg::OnNcHitTest(CPoint point)
+{
+    int ret =CDialog::OnNcHitTest(point);
+
+    if(HTTOP ==ret || HTBOTTOM == ret || HTLEFT == ret || HTRIGHT == ret
+        || HTBOTTOMLEFT == ret ||HTBOTTOMRIGHT == ret || HTTOPLEFT == ret || HTTOPRIGHT == ret)
+        return    HTCLIENT;
+    return    ret;
+}
+
+8. VS2010并行计算
+//头文件
+#include <ppl.h>
+using namespace Concurrency;
+
+//使用
+    parallel_for(0, nMAX, [&](int i)
+    {});
+
+9.    获得当前模块所在目录
+TCHAR szTemp[101];
+GetModuleFileName(NULL, szTemp, 100);
+
+10. 将字符串资源的数据加载到数组中
+    HMODULE hModule = AfxGetInstanceHandle();    //GetModuleHandle(NULL);
+    HRSRC hres = FindResource(hModule, MAKEINTRESOURCE(IDR_RCDATA_EFFECT), RT_RCDATA);
+    HGLOBAL hGlobal = LoadResource(hModule, hres);
+    LPVOID pRes = LockResource(hGlobal);
+    ULONG dwSize = ::SizeofResource(hModule, hres);
+    BYTE *pBuffer = new BYTE[dwSize];
+    CopyMemory(pBuffer, pRes, dwSize);
+
+11. Win32 API 写文件
+    HANDLE hFile;
+    DeleteFile(TEXT("D:\\Effect.encrypt"));
+    hFile = CreateFile(TEXT("D:\\Effect.encrypt"),
+        GENERIC_WRITE,
+        FILE_SHARE_WRITE,
+        NULL,
+        CREATE_NEW,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL);
+    DWORD dwWritten = 0;
+    WriteFile(hFile, pBuffer, dwSize, &dwWritten, NULL);
+    CloseHandle(hFile);
+
+12. DLL中创建窗口
+  m_hWnd = CreateWindow("STATIC", "Play Window", WS_POPUP | WS_VISIBLE,
+                        0, 0, _frame_width, _frame_height, 
+                        (HWND)NULL, (HMENU)NULL,(HINSTANCE)NULL, (LPARAM)0);
+
+13. 指定Video Render渲染到Picture控件
+    IVideoWindow *p_video_window = NULL;
+    hr = mp_graph->QueryInterface(IID_IVideoWindow, ( void** )&p_video_window );
+    if( FAILED( hr ) ) { goto done; }
+    CWnd *p_cwnd = GetDlgItem( IDC_STATIC_PREVIEW );
+    HWND hwnd = p_cwnd->GetSafeHwnd();
+    p_video_window->put_Owner( ( OAHWND )hwnd );
+    p_video_window->put_WindowStyle( WS_CHILD | WS_CLIPCHILDREN );
+    CRect rect;
+    p_cwnd->GetClientRect( &rect );
+    p_video_window->SetWindowPosition( 0, 0, rect.right, rect.bottom );
+
+14. 初始化Picture控件为黑色
+//在OnPaint中调用此函数。
+fill_picture_control_black()
+{
+    CWnd *p_picture_wnd = GetDlgItem( IDC_STATIC_PREVIEW );
+    CDC *pDC = p_picture_wnd->GetDC();
+    CBrush blackBrush;
+    blackBrush.CreateSolidBrush( RGB( 0, 0, 0 ));
+    CRect rect;
+    p_picture_wnd->GetClientRect( &rect );
+    pDC->FillRect( rect, &blackBrush );
+}
+
+15. Filter查询自定义接口
+NonDelegatingQueryInterface(REFIID riid, void ** ppv)
+{
+    CheckPointer(ppv, E_POINTER);
+
+    if(IID_IXDSource == riid) {
+        return GetInterface(static_cast<IXDSource*>(_output_pin), ppv);
+    }
+    else if(IID_IAMPushSource == riid) {
+        return GetInterface(static_cast<IAMPushSource*>(_output_pin), ppv);
+    }
+    else if(IID_IAMFilterMiscFlags == riid) {
+        return GetInterface(static_cast<IAMFilterMiscFlags*>(this), ppv);
+    } else {
+        return CBaseFilter::NonDelegatingQueryInterface(riid, ppv);
+    }
+}
+注意：此处必须使用static_cast，不能使用reinterpret_cast
+
+16. 查找filter指定方向的Pin，返回第一个符合要求的pin。
+HRESULT findOnlyPin(IBaseFilter *base_filter, IPin **ret_pin, const PIN_DIRECTION find_dir)
+{
+    if(NULL==base_filter) {
+        return E_POINTER;
+    }
+
+    HRESULT hr = S_OK;
+    IEnumPins *enum_pins = NULL;
+    hr = base_filter->EnumPins(&enum_pins);
+    if(FAILED(hr)) {
+        SafeRelease(&enum_pins);
+        return hr;
+    }
+    if(FAILED(hr)) return hr;
+    IPin *temp_pin = NULL;
+    enum_pins->Reset();
+    while(SUCCEEDED(enum_pins->Next(1, &temp_pin, NULL))) {
+        //防止意外错误发生
+        if(NULL==temp_pin) break;
+        PIN_DIRECTION pin_dir;
+        temp_pin->QueryDirection(&pin_dir);
+        if(find_dir != pin_dir) {
+            SafeRelease(&temp_pin);
+            continue;
+        }
+        *ret_pin = temp_pin;
+        //This method needs to be called.
+        //Because we are going to release temp_pin.
+        //And the "=" operation doesn't increase reference number.
+        (*ret_pin)->AddRef();
+        SafeRelease(&temp_pin);
+        break;
+    }
+
+    SafeRelease(&temp_pin);
+    SafeRelease(&enum_pins);
+    if(NULL==(*ret_pin))
+        return E_FAIL;
+    else
+        return S_OK;
+}
+
+17. 在DLL中创建和删除一个控制台
+    //创建控制台，打开输入输出
+    AllocConsole();
+    freopen("CONOUT$", "w+t", stdout);
+    freopen("CONIN$", "r+t", stdin);
+    //关闭输入输出，释放控制台
+    fclose(stdout);
+    fclose(stdin);
+    FreeConsole();
+
+18. 在DLL或应用程序中截获某窗口的消息，且消息可以继续传给默认窗口函数
+    //传递当前类的指针
+    SetWindowLong(_play_window, GWL_USERDATA, reinterpret_cast<long>(this));
+    //设置处理截获的消息的新窗口函数
+    //并获得旧窗口函数句柄
+    //以便新窗口函数处理完消息之后继续执行旧窗口函数处理消息
+    long ret = SetWindowLong(_play_window, GWL_WNDPROC, reinterpret_cast<long>(SubWndProc));
+    
+    //使用对象指针调用对象的函数
+    //以便操作类对象的成员变量
+    LRESULT SubWndProc(HWND hWnd, int uID, WPARAM wParam, LPARAM lParam)
+    {
+        long user_data = GetWindowLong(hWnd, GWL_USERDATA);
+        MediaPlayer *this_player = reinterpret_cast<MediaPlayer*>(user_data);
+        return this_player->processHwndMsg(hWnd, uID, wParam, lParam);
+    }
+
+19. 指定窗口接收DirectShow graph builder的事件
+    (1) 声明graph的消息宏
+    #define WM_GRAPHNOTIFY WM_APP+139
+    (2) 定义graph消息的处理函数
+    HRESULT processGraphEvent()
+    {
+        //_media_event为IMediaEventEx类型的成员变量
+        //此处假设已经成功从Graph builder获取到
+        if(NULL==_media_event) { return S_OK; }
+        long event_code=0, param1=0, param2=0;
+        HRESULT hr = S_OK;
+        hr = _media_event->GetEvent(&event_code, &param1, &param2);
+        if(SUCCESS(hr)) {
+            //在此处执行对事件的处理
+        }
+        return hr;
+    }
+    (3) 在窗口响应函数中添加对WM_GRAPHNOTIFY的响应
+    case WM_GRAPHNOTIFY:
+        processGraphEvent();
+        break;
+    (4) Render graph之后从graph builder获取IMediaEventEx
+        并设置事件接收窗口
+        hr = _graph_builder->QueryInterface(
+        IID_IMediaEventEX,
+        reinterpret_cast<void**>(&_media_event));
+        if(SUCCESS(hr)) {
+            hr = _media_event->SetNotifyWindow(
+            reinterpret_cast<OAHWND>(hwnd), WM_GRAPHNOTIFY, 0);
+        }
+    (5) 释放graph之前停止接收Graph事件
+        _media_event->SetNotifyWindow(NULL, 0, 0);
+
+20. 在代码中注册COM动态链接库
+    HKEY key_value = NULL;
+    //XD Source filter.
+    if(ERROR_SUCCESS != RegOpenKeyEx(HKEY_CLASSES_ROOT,
+        "CLSID\\{49B47E80-49E7-447A-8CF2-53AEB514AB82}", 0,
+        KEY_READ, &key_value)) {
+      RegCloseKey(key_value);
+      key_value = NULL;
+      HMODULE hmodule = ::LoadLibrary("XDSource.ax");
+      FARPROC reg_func = ::GetProcAddress(hmodule, "DllRegisterServer");
+      if(NULL==reg_func || FAILED(reg_func())) {
+        FreeLibrary(hmodule);
+        return -1;
+      }
+      FreeLibrary(hmodule);
+    }
+    RegCloseKey(key_value);
+    key_value = NULL;
+
+21. MFC Unicode编码格式下打开文件并将文件名转换为char*
+    char *file_path = NULL;
+#if 1
+    //打开只读文件
+    CFileDialog file_dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY | OFN_OVERWRITEPROMPT,
+                        TEXT("MP4 Files(*.MP4)|*.mp4|All Files(*.*)|*.*||"));
+#else
+    //打开写入文件
+    CFileDialog file_dlg(FALSE, NULL, TEXT("*.ts"),
+        OFN_HIDEREADONLY|OFN_OVERWRITEPROMPT,
+        TEXT("TS文件(*.ts)|*.ts|所有文件(*.*)|*.*||"), NULL);
+#endif
+    if(IDOK != file_dlg.DoModal()) {
+        return;
+    }
+    CString szPath = file_dlg.GetPathName();
+    TCHAR wszPath[260] = {'\0'};
+    lstrcpy(wszPath, szPath);
+    DWORD dwNum = WideCharToMultiByte(CP_OEMCP, NULL, wszPath, -1, NULL, 0, NULL, FALSE);
+    file_path = new char[dwNum];
+    WideCharToMultiByte(CP_OEMCP, NULL, wszPath, -1, file_path, dwNum, NULL, FALSE);
+    SafeDelete(&file_path);
+
+22. char*转wchar_t*(WCHAR*)
+    char strMulByte[50] = "Just a test."
+    DWORD size = MultiByteToWideChar(CP_ACP, 0, strMulByte, -1, NULL, 0);
+    wchar_t *strWideChar = new wchar_t[size];
+    MultiByteToWideChar(CP_ACP, 0, strMulByte, -1, strWideChar, size);
+    
+23. Win32 API 文件与路径是否存在的判断方法
+    路径判断
+    PathIsDirectory(path);
+    文件判断
+    WIN32_FIND_DATA find_file_data;
+    HANDLE find_file = FindFirstFile(file_path, &find_file_data);
+    if(INVALID_HANDLE_VALUE != find_file) {    //文件存在
+        FindClose(find_file);
+    }
+    
+24. 使用多媒体定时器
+    #include <MMSystem.h>
+    #pragma comment(lib, "winmm.lib")
+    //定义精度和延时，单位为毫秒
+    const int TIMER_PRECISION = 5;
+    const int TIMER_DELAY = 500;
+    //定时器回调函数
+    void CALLBACK handleTimer(UINT id, UINT msg, DWORD dwUser, DWORD dw1, DWORD dw2)
+    {
+        ClassName *this_class = reinterpret_cast<ClassName*>(dwUser);
+        this_class->processTimer();
+    }
+    //创建定时器
+    void ClassName::createTimer()
+    {
+        timeBeginPeriod(TIMER_PRECISION);
+        _timer_ID = timeSetEvent(
+        TIMER_DELAY, TIMER_PRECISION,
+        handleTimer, reinterpret_cast<DWORD_PTR>(this), TIME_PERIODIC);
+        _is_timer_on = true;
+    }
+    //销毁定时器
+    void ClassName::destroyTimer()
+    {
+        if(_is_timer_on) {
+            timeKillEvent(_timer_ID);
+            timeEndPeriod(TIMER_PRECISION);
+            _timer_ID = 0;
+            _is_timer_on = false;
+        }
+    }
+    void ClassName::processTimer()
+    {
+        //做相关处理
+    }
+    
+25. 禁用拷贝构造函数
+// A macro to disallow the copy constructor and operator= functions 
+// This should be used in the private:declarations for a class
+#ifndef DISALLOW_COPY_AND_ASSIGN
+#define DISALLOW_COPY_AND_ASSIGN(TypeName) \
+    TypeName(const TypeName&);             \
+    TypeName& operator=(const TypeName&)
+#endif
+    
+26. 计算时间差
+    方法一：
+    LARGE_INTEGER litmp;
+    LONGLONG QPart1,QPart2;
+    double dfMinus, dfFreq, dfTime; 
+    QueryPerformanceFrequency(&litmp);
+    dfFreq = (double)litmp.QuadPart;// 获得计数器的时钟频率
+    QueryPerformanceCounter(&litmp);
+    QPart1 = litmp.QuadPart;// 获得初始值
+    /*****代码执行部分*****/
+    QueryPerformanceCounter(&litmp);
+    QPart2 = litmp.QuadPart;//获得结束值
+    dfMinus = static_cast<double>(QPart2 - QPart1);
+    dfTime = dfMinus * 1000.0 /dfFreq; //获得时间差，单位为毫秒
+    方法二：
+    DWORD begin_time, end_time;
+    timeBeginPeriod(1);
+    begin_time = timeGetTime();
+    /*****代码执行部分*****/
+    end_time = timeGetTime();
+    end_time -= begin_time;
+    timeEndPeriod(1);
+    
+27. 信号量封装
+    //声明semaphore类
+    class semaphore
+    {
+    public:
+        semaphore(int val = 0);
+        ~semaphore(void);
+    public:
+        void post(void);
+        DWORD wait(DWORD ms);
+        void reset(void);
+    private:
+        int fInitial;
+        HANDLE fHandle;
+    };
+    //实现semaphore类
+    semaphore::semaphore(int val)
+        : fInitial(val)
+    {
+        fHandle = CreateSemaphore(nullptr, fInitial, 0xFFFF, nullptr);
+    }
+    semaphore::~semaphore(void)
+    {
+        if (fHandle) {
+            CloseHandle(fHandle);
+            fHandle = nullptr;
+        }
+    }
+    void semaphore::post(void)
+    {
+        ReleaseSemaphore(fHandle, 1, nullptr);
+    }
+    DWORD semaphore::wait(DWORD ms)
+    {
+        return WaitForSingleObject(fHandle, ms);
+    }
+    void semaphore::reset(void)
+    {
+        if (fHandle) {
+            CloseHandle(fHandle);
+            fHandle = nullptr;
+        }
+        fHandle = CreateSemaphore(nullptr, fInitial, 0xFFFF, nullptr);
+    }
+    
+28. 自动锁
+    //临界区封装
+    class SectionLock {
+    private:
+        // make copy constructor and assignment operator inaccessible
+        SectionLock(const SectionLock &refCritSec);
+        SectionLock &operator=(const SectionLock &refCritSec);
+        CRITICAL_SECTION _critical_section;
+    public:
+        SectionLock() {
+            InitializeCriticalSection(&_critical_section);
+        };
+
+        ~SectionLock() {
+            DeleteCriticalSection(&_critical_section);
+        };
+
+        void Lock() {
+            EnterCriticalSection(&_critical_section);
+        };
+
+        void Unlock() {
+            LeaveCriticalSection(&_critical_section);
+        };
+    };
+    //使用封装临界区的自动锁
+    class AutoLock {
+    private:
+        // make copy constructor and assignment operator inaccessible
+        AutoLock(const AutoLock &refAutoLock);
+        AutoLock &operator=(const AutoLock &refAutoLock);
+    protected:
+        SectionLock * _section_lock;
+    public:
+        AutoLock(SectionLock * plock) {
+            _section_lock = plock;
+            _section_lock->Lock();
+        };
+        ~AutoLock() {
+            _section_lock->Unlock();
+        };
+    };
+29. 获得Jpeg文件或流的宽高信息
+    //获得JPEG包的宽高信息
+    BYTE *frame_buffer = NULL;
+    int frame_size = 0;
+    /* 获得frame_buffer与frame_size代码省略*/
+    int temp_width=0, temp_height=0;
+    for(int i=0; i<(frame_size-9); ++i) {
+        if(0xff == *(frame_buffer+i)) {
+            if(0xc0 == *(frame_buffer+i+1) && (i+8)<frame_size) {
+                int high_byte=0, low_byte=0;
+                temp_height = *(frame_buffer+i+5) * 256 + *(frame_buffer+i+6);
+                temp_width = *(frame_buffer+i+7) * 256 + *(frame_buffer+i+8);
+            }
+        }
+    }
+    
+30. 保存bmp文件方法
+bool saveToBMP(unsigned char *image_buffer, BITMAPINFOHEADER *info_header, const char *path)
+{
+    if(NULL==path ||
+        NULL==image_buffer ||
+        NULL==info_header) {
+            return false;
+    }
+    if(XD_ImageBMP != decideImageType(path)) {
+        return false;
+    }
+
+    //初始化文件信息头
+    BITMAPFILEHEADER file_header;
+    int bit_count = 0;
+    if(info_header->biBitCount <= 8) bit_count = 1<<info_header->biBitCount;
+    memset(&file_header, 0, sizeof(file_header));
+    file_header.bfType = static_cast<DWORD>(('M' << 8) | 'B');
+    file_header.bfSize = sizeof(file_header) + sizeof(BITMAPINFOHEADER) +
+        bit_count*sizeof(RGBQUAD) +info_header->biSizeImage;
+    file_header.bfReserved1 = 0;
+    file_header.bfReserved2 = 0;
+    file_header.bfOffBits = static_cast<DWORD>(sizeof(BITMAPINFOHEADER)
+        + sizeof(BITMAPFILEHEADER));
+    //写入文件
+    FILE *file_handle = NULL;
+    fopen_s(&file_handle, path, "wb");
+    if(NULL==file_handle) {
+        return false;
+    }
+    fwrite(&file_header, 1, sizeof(BITMAPFILEHEADER), file_handle);
+    fwrite(info_header, 1, sizeof(*info_header), file_handle);
+    fwrite(image_buffer, 1, info_header->biSizeImage, file_handle);
+    fclose(file_handle);
+
+    return true;
+}
+
+31. libjpeg写文件方法
+//libjpeg
+#include <stdio.h>
+#include <stdlib.h>
+#include "libjpeg/jpeglib.h"
+#pragma comment(lib, "libjpeg.lib")
+
+bool ImageSaver::saveToJPG(unsigned char *image_buffer, BITMAPINFOHEADER *info_header, const char *path)
+{
+    if(NULL==path ||
+        NULL==image_buffer ||
+        NULL==info_header) {
+            return false;
+    }
+    if(XD_ImageJPG != decideImageType(path)) {
+        return false;
+    }
+
+    //打开目标文件
+    FILE *file_handle = NULL;
+    fopen_s(&file_handle, path, "wb");
+    if(NULL == file_handle) return false;
+
+    //图像相关信息
+    int width = info_header->biWidth;
+    int height = info_header->biHeight;
+    int pixel_bytes = info_header->biBitCount / 8;
+    int stride = info_header->biSizeImage / height;
+
+    //libjpeg相关变量
+    jpeg_compress_struct compress_info;
+    jpeg_error_mgr jpeg_error;
+    JSAMPROW pic_line;
+
+    //初始化libjpeg变量
+    memset(&compress_info, 0, sizeof(compress_info));
+    compress_info.err = jpeg_std_error(&jpeg_error);
+    jpeg_create_compress(&compress_info);
+    jpeg_stdio_dest(&compress_info, (FILE*)file_handle);
+    compress_info.image_width = width;
+    compress_info.image_height = height;
+    compress_info.input_components =  3;
+    compress_info.in_color_space = JCS_RGB;
+    jpeg_set_defaults(&compress_info);
+    jpeg_set_quality(&compress_info, 100, true);
+
+    //开始压缩bmp位图并写入jpg文件
+    jpeg_start_compress(&compress_info, true);
+    int i = 0;
+    //保存jpeg文件，无透明信息
+    pic_line = new JSAMPLE[width*3];
+    while(compress_info.next_scanline < compress_info.image_height) {
+        //RGB顺序需要颠倒
+        for(int j=0; j<width; ++j) {
+            pic_line[j*3+0] = *(image_buffer+(height-i-1)*stride+j*pixel_bytes+2);
+            pic_line[j*3+1] = *(image_buffer+(height-i-1)*stride+j*pixel_bytes+1);
+            pic_line[j*3+2] = *(image_buffer+(height-i-1)*stride+j*pixel_bytes+0);
+        }
+        ++i;
+        jpeg_write_scanlines(&compress_info, &pic_line, 1);
+    }
+    SafeDeleteArray(&pic_line);
+    jpeg_finish_compress(&compress_info);
+    jpeg_destroy_compress(&compress_info);
+
+    fclose(file_handle);
+    return true;
+}
+
+32. libpng写文件方法
+//libpng
+#include <stdio.h>
+#include <setjmp.h>
+#include "libpng/png.h"
+#pragma comment(lib, "zlib.lib")
+#pragma comment(lib, "libpng.lib")
+#include <stdlib.h>
+
+bool saveToPNG(unsigned char *image_buffer, BITMAPINFOHEADER *info_header, const char *path)
+{
+    if(NULL==path ||
+        NULL==image_buffer ||
+        NULL==info_header) {
+            return false;
+    }
+    if(XD_ImagePNG != decideImageType(path)) {
+        return false;
+    }
+    bool ret = false;
+
+    //打开目标文件
+    FILE *file_handle = NULL;
+    fopen_s(&file_handle, path, "wb");
+    if(NULL == file_handle) return false;
+
+    //libpng相关变量
+    png_struct *pic_ptr = NULL;
+    png_info *pic_info_ptr = NULL;
+    png_bytep *pic_datas = NULL;
+    
+    //图像信息
+    int width = info_header->biWidth;
+    int height = info_header->biHeight;
+    int pixel_bytes = info_header->biBitCount / 8;
+    
+    int stride = info_header->biSizeImage / height;
+
+    //初始化libpng相关变量
+    pic_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if(NULL == pic_ptr) {
+        PRINTF_DEBUG_MSG("saveToPNG, failed to create write struct.")
+        ret = false;
+        goto done;
+    }
+    pic_info_ptr = png_create_info_struct(pic_ptr);
+    if(NULL == pic_info_ptr) {
+        PRINTF_DEBUG_MSG("saveToPNG, failed to create info struct.")
+        ret = false;
+        goto done;
+    }
+    if(setjmp(png_jmpbuf(pic_ptr))) {
+        PRINTF_DEBUG_MSG("saveToPNG, failed to create write and info struct.")
+        ret = false;
+        goto done;
+    }
+    png_init_io(pic_ptr, file_handle);
+    
+    //若像素字节数不是3或4，返回错误
+    if(3!=pixel_bytes && 4!=pixel_bytes)  {
+        ret = false;
+        goto done;
+    }
+    //截图不包含透明信息，故颜色空间指定为RGB
+    png_set_IHDR(pic_ptr, pic_info_ptr, width, height,
+                                8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
+                                PNG_COMPRESSION_TYPE_BASE, PNG_FILTER_TYPE_BASE);
+    png_write_info(pic_ptr, pic_info_ptr);
+
+    //写图像数据
+    int pic_line_size = width * 3;
+    pic_datas = new png_bytep[height];
+    for(int i=0; i<height; ++i) {
+         pic_datas[i] = new png_byte[pic_line_size];
+         //图像数据上下颠倒，需要恢复；RGB顺序颠倒，需要恢复。
+         for(int j=0; j<width; ++j) {
+             pic_datas[i][j*3+0] = *(image_buffer+(height-i-1)*stride+j*pixel_bytes+2);
+             pic_datas[i][j*3+1] = *(image_buffer+(height-i-1)*stride+j*pixel_bytes+1);
+             pic_datas[i][j*3+2] = *(image_buffer+(height-i-1)*stride+j*pixel_bytes+0);
+         }
+    }
+    png_write_image(pic_ptr, pic_datas);
+    for(int i=0; i<hieght; ++i) {
+        SafeDeleteArray(&pic_datas[i]);
+    }
+    SafeDeleteArray(&pic_datas);
+    png_write_end(pic_ptr, NULL);
+
+done:
+    png_destroy_write_struct(&pic_ptr, &pic_info_ptr);
+    fclose(file_handle);
+    return ret;
+}
+
+33. 禁用自动休眠方法
+    //禁止自动休眠
+    SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+    //恢复自动休眠
+    SetThreadExecutionState(ES_CONTINUOUS);
+    
+34. 根据DirectShow的EC_VIDEO_SIZE_CHANGED事件的参数获得视频帧新宽高
+    HRESULT hr = _media_event->GetEvent(&event_code, &param1, &param2, 0);
+    //低八位为帧宽，高八位为帧高
+    _frame_width = static_cast<int>(param1&0x0000ffff);
+    _frame_height = static_cast<int>(param1&0xffff0000) >> 16;
+    
+35. 获得当前DLL的HMODULE
+    HMODULE hModule = NULL;
+    //Mothod 可为该DLL任意非类成员函数
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, reinterpret_cast<LPCSTR>(&method), &hModule);
+    FreeLibrary(hModule);
+    
+36. 创建标准线程
+UINT __stdcall processThread(void *arg)
+{
+    if(arg) {
+        ClassName *ptr = reinterpret_cast<ClassName*>(arg);
+        ptr->handleThread();
+    }
+    _endthreadex(0);
+    return 0;
+}
+
+_thread_handle = (HANDLE)_beginthreadex(nullptr, 0, &processThread, reinterpret_cast<void*>(this), 0, nullptr);
+CloseHandle(_thread_handle);

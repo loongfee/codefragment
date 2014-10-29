@@ -1,0 +1,32 @@
+COORD GetConsoleCursorPosition(HANDLE hHandle)
+{  
+	CONSOLE_SCREEN_BUFFER_INFO info={0};  
+	GetConsoleScreenBufferInfo( hHandle , &info );  
+	return info.dwCursorPosition;  
+} 
+
+
+int percent = 0;
+	//设置光标位置
+	HANDLE hOut; 
+	hOut = GetStdHandle(STD_OUTPUT_HANDLE); 
+	//得到当前光标位置
+	COORD pos= GetConsoleCursorPosition(hOut);
+	SetConsoleCursorPosition(hOut, pos);
+	cout<<percent<<"%";
+	
+	
+			int tmpPercent = (int)((i + 1) / (double)(strListTmp.size()) * 100 + 0.5);
+		if(tmpPercent > percent)
+		{
+			percent = tmpPercent;
+			// 在保留光标位置输出，覆盖原输出内容
+			SetConsoleCursorPosition(hOut, pos);
+			cout<<percent<<"%";
+		}
+		
+		
+		
+///////////////////////////////////
+
+		printf("%3d%%\r", percent);

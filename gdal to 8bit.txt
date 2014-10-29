@@ -1,0 +1,1 @@
+gdal_translate -ot Byte -scale  -b 1 -b 2 -b 3 source.tif out.tif
