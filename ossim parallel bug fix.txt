@@ -1,0 +1,69 @@
+ossim parallel bug fix
+File: ossimMultiThreadSequencer.h
+   mutable OpenThreads::Mutex            m_tileMutex;
+   
+File: ossimMultiThreadSequencer.cpp
+//*************************************************************************************************
+// Job's start method performs actual getTile in a thread on cloned chain and saves the result
+// in the sequencer's results cache.
+//*************************************************************************************************
+void ossimMultiThreadSequencer::ossimGetTileJob::start()
+{
+   running();
+   if (m_sequencer.d_debugEnabled)
+   {
+      ostringstream s1;
+      s1<<"THREAD #"<<m_chainID<<" -- Starting tile/job #"<<m_tileID;
+      m_sequencer.print(s1);
+   }
+
+   // Figure out the rect for this tile. Only process if rect is valid:
+   ossimIrect tileRect;
+   if (m_sequencer.getTileRect(m_tileID, tileRect))
+   {
+      // Perform the getTile and save the result:
+	   m_sequencer.m_tileMutex.lock();
+      ossimRefPtr<ossimImageData> tile = 0;
+      ossimImageSource* source = m_sequencer.m_inputChain->getClone(m_chainID);
+      double dt = ossimTimer::instance()->time_s(); //###
+
+      if (source != NULL)
+         tile = source->getTile(tileRect);
+      if (!tile.valid())
+      {
+         tile = m_sequencer.theBlankTile;
+         tile->setImageRectangle(tileRect);
+      }
+      dt = ossimTimer::instance()->time_s() - dt; //###
+
+	  m_sequencer.m_tileMutex.unlock();
+
+	  //cv::Mat outMat;
+	  //outMat = cv::Mat(cv::Size(tileRect.width(), tileRect.height()), CV_8UC1);
+	  //outMat.data = static_cast<uchar*>(tile->getBuf(0));
+	  //char str[100];
+	  //sprintf(str, "%d.png", m_tileID);
+	  //cv::imwrite(str, outMat);
+      // Give the sequencer the tile. Execution may pause here while waiting for space to free up
+      // if the cache is full.
+      m_sequencer.setTileInCache(m_tileID, (ossimImageData*)tile->dup(), m_chainID, dt);
+	  //cout << m_tileID << "\t";
+	  //cout << tileRect.toString() << endl;
+   }
+
+   // Unblock the main thread which might be blocked waiting for jobs to finish:
+   m_sequencer.m_getTileBlock.release();
+
+   // Queue the next job using this job's freed-up image chain:
+   if (t_launchNewJob)
+      m_sequencer.nextJob(m_chainID);
+
+   finished();
+   
+   if (m_sequencer.d_debugEnabled)
+   {
+      ostringstream s2;
+      s2<<"THREAD #"<<m_chainID<<" -- Finished tile/job #"<<m_tileID;
+      m_sequencer.print(s2);
+   }
+}
